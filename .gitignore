@@ -1,0 +1,4 @@
+/RPC-Switch-Client-*.tar.gz
+/RPC-Switch-Client-*/
+/.build/
+*~
