@@ -1,6 +1,8 @@
 package RPC::Switch::Client;
 use Mojo::Base -base;
 
+use feature 'say';
+
 our $VERSION = '0.03'; # VERSION
 
 #
@@ -36,7 +38,7 @@ use JSON::MaybeXS;
 use MojoX::NetstringStream 0.06;
 
 has [qw(
-	actions address auth channels clientid conn daemon debug json lastping
+	actions address auth channels clientid conn daemon pidfile debug json lastping
 	log method ns ping_timeout port rpc timeout tls token who
 )];
 
@@ -123,6 +125,7 @@ sub new {
 	$self->{channels} = {}; # per channel hash of waitids
 	$self->{clientid} = $clientid;
 	$self->{daemon} = $args{daemon} // 0;
+	$self->{pidfile} = $args{pidfile};
 	$self->{debug} = $args{debug} // 1;
 	$self->{json} = $json;
 	$self->{ping_timeout} = $args{ping_timeout} // 300;
@@ -396,7 +399,9 @@ sub ping {
 sub work {
 	my ($self) = @_;
 	if ($self->daemon) {
-		_daemonize();
+		_daemonize($self->pidfile);
+	} else {
+		_create_pidfile($self->pidfile);
 	}
 
 	my $pt = $self->ping_timeout;
@@ -639,19 +644,38 @@ sub close {
 	%$self = ();
 }
 
-# copied from Mojo::Server
+# originally copied from Mojo::Server
 sub _daemonize {
+	my $pidfile = shift;
+
 	use POSIX;
 
 	# Fork and kill parent
 	die "Can't fork: $!" unless defined(my $pid = fork);
 	exit 0 if $pid;
+
+	_create_pidfile($pidfile);
+
 	POSIX::setsid or die "Can't start a new session: $!";
 
 	# Close filehandles
 	open STDIN,  '</dev/null';
 	open STDOUT, '>/dev/null';
 	open STDERR, '>&STDOUT';
+}
+
+sub _create_pidfile {
+	my $pidfile = shift;
+
+	if ($pidfile) {
+
+		open my $pid_fh, '>', $pidfile 
+			or die "Unable to open pid file for writing '$pidfile': $!";
+
+		say $pid_fh $$;
+
+		CORE::close $pid_fh;
+	}
 }
 
 #sub DESTROY {
