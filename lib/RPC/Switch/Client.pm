@@ -650,9 +650,30 @@ sub _daemonize {
 
 	use POSIX;
 
+	# handles for IPC and checking success of child
+	pipe my ( $in, $out );
+
 	# Fork and kill parent
 	die "Can't fork: $!" unless defined(my $pid = fork);
-	exit 0 if $pid;
+
+	if ($pid) {
+
+		# read if child was successful before exiting
+
+		CORE::close $out;
+
+		my $success = readline $in;
+
+		CORE::close $in;
+
+		exit ($success ? 0 : 1);
+
+	} else {
+
+		# close the handle that the parent will read on
+		CORE::close $in;
+
+	}
 
 	_create_pidfile($pidfile);
 
@@ -662,6 +683,10 @@ sub _daemonize {
 	open STDIN,  '</dev/null';
 	open STDOUT, '>/dev/null';
 	open STDERR, '>&STDOUT';
+
+	say $out 1; # notify success 
+
+	CORE::close $out;
 }
 
 sub _create_pidfile {
