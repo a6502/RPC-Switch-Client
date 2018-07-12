@@ -1,7 +1,7 @@
 package RPC::Switch::Client;
 use Mojo::Base -base;
 
-our $VERSION = '0.05'; # VERSION
+our $VERSION = '0.06'; # VERSION
 
 #
 # Mojo's default reactor uses EV, and EV does not play nice with signals
@@ -408,7 +408,6 @@ sub work {
 	}
 
 	my $pt = $self->ping_timeout;
-
 	my $tmr;
 	$tmr = Mojo::IOLoop->recurring($pt => sub {
 		my $ioloop = shift;
@@ -419,7 +418,7 @@ sub work {
 		$ioloop->remove($self->clientid);
 		$self->{_exit} = WORK_PING_TIMEOUT; # todo: doc
 		$ioloop->stop;
-		Mojo::IOLoop->remove($tmr);
+		$ioloop->remove($tmr);
 	}) if $pt > 0;
 
 	$self->{_exit} = WORK_OK;
