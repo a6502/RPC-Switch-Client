@@ -403,7 +403,9 @@ sub work {
 	}
 
 	my $pt = $self->ping_timeout;
-	my $tmr = Mojo::IOLoop->recurring($pt => sub {
+
+	my $tmr;
+	$tmr = Mojo::IOLoop->recurring($pt => sub {
 		my $ioloop = shift;
 		$self->log->debug('in ping_timeout timer: lastping: '
 			 . ($self->lastping // 0) . ' limit: ' . (time - $pt) );
@@ -412,6 +414,7 @@ sub work {
 		$ioloop->remove($self->clientid);
 		$self->{_exit} = 92; # todo: doc
 		$ioloop->stop;
+		Mojo::IOLoop->remove($tmr);
 	}) if $pt > 0;
 
 	$self->{_exit} = 0;
