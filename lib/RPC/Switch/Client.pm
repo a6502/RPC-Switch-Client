@@ -35,6 +35,7 @@ use JSON::RPC2::TwoWay 0.03; # for access to the request
 use JSON::MaybeXS;
 use MojoX::NetstringStream 0.06;
 
+
 has [qw(
 	actions address auth channels clientid conn daemon pidfile debug json lastping
 	log method ns ping_timeout port rpc timeout tls token who
@@ -42,10 +43,14 @@ has [qw(
 
 # keep in sync with the rpc-switch
 use constant {
-	RES_OK => 'RES_OK',
-	RES_WAIT => 'RES_WAIT',
-	RES_ERROR => 'RES_ERROR',
-	RES_OTHER => 'RES_OTHER', # 'dunno'
+	RES_OK                 => 'RES_OK',
+	RES_WAIT               => 'RES_WAIT',
+	RES_ERROR              => 'RES_ERROR',
+	RES_OTHER              => 'RES_OTHER', # 'dunno'
+	WORK_OK                => 0,           # exit codes for work method
+	WORK_PING_TIMEOUT      => 92,
+	WORK_CONNECTION_CLOSED => 91,
+
 };
 
 sub new {
@@ -113,7 +118,7 @@ sub new {
 		$ns->on(close => sub {
 			$conn->close;
 			$log->info('connection to rpcswitch closed');
-			$self->{_exit} = 91; # todo: doc
+			$self->{_exit} = WORK_CONNECTION_CLOSED; # todo: doc
 			Mojo::IOLoop->stop;
 		});
 	});
@@ -403,18 +408,21 @@ sub work {
 	}
 
 	my $pt = $self->ping_timeout;
-	my $tmr = Mojo::IOLoop->recurring($pt => sub {
+
+	my $tmr;
+	$tmr = Mojo::IOLoop->recurring($pt => sub {
 		my $ioloop = shift;
 		$self->log->debug('in ping_timeout timer: lastping: '
 			 . ($self->lastping // 0) . ' limit: ' . (time - $pt) );
 		return if ($self->lastping // 0) > time - $pt;
 		$self->log->error('ping timeout');
 		$ioloop->remove($self->clientid);
-		$self->{_exit} = 92; # todo: doc
+		$self->{_exit} = WORK_PING_TIMEOUT; # todo: doc
 		$ioloop->stop;
+		Mojo::IOLoop->remove($tmr);
 	}) if $pt > 0;
 
-	$self->{_exit} = 0;
+	$self->{_exit} = WORK_OK;
 	$self->log->debug(blessed($self) . ' starting work');
 	Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
 	$self->log->debug(blessed($self) . ' done?');
