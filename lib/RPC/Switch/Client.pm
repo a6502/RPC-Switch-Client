@@ -1,7 +1,7 @@
 package RPC::Switch::Client;
 use Mojo::Base -base;
 
-our $VERSION = '0.04'; # VERSION
+our $VERSION = '0.05'; # VERSION
 
 #
 # Mojo's default reactor uses EV, and EV does not play nice with signals
@@ -694,7 +694,6 @@ sub _create_pidfile {
 	my $pidfile = shift;
 
 	if ($pidfile) {
-
 		open my $pid_fh, '>', $pidfile 
 			or die "Unable to open pid file for writing '$pidfile': $!";
 
