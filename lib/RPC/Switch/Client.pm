@@ -361,7 +361,7 @@ sub rpc_result {
 
 sub rpc_channel_gone {
 	my ($self, $c, $a) = @_;
-	$self->log->error('got channel_gone: ' . Dumper($a));
+	$self->log->debug('got channel_gone: ' . Dumper($a));
 	my $ch = $a->{channel};
 	return unless $ch;
 	my $wl = delete $self->{channels}->{$ch};
