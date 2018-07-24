@@ -382,7 +382,7 @@ sub ping {
 		$done++;
 	});
 
-	$self->conn->call('ping', {}, sub {
+	$self->conn->call('rpcswitch.ping', {}, sub {
 		my ($e, $r) = @_;
 		if (not $e and $r and $r =~ /pong/) {
 			$ret = 1;
