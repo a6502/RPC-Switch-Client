@@ -1,7 +1,7 @@
 package RPC::Switch::Client;
 use Mojo::Base -base;
 
-our $VERSION = '0.06'; # VERSION
+our $VERSION = '0.07'; # VERSION
 
 #
 # Mojo's default reactor uses EV, and EV does not play nice with signals
@@ -88,9 +88,9 @@ sub new {
 	$self->{tls_key} = $tls_key;
 	$self->{token} = $token;
 	$self->{who} = $who;
-	$self->{autoconnect} = ($args{autoconnect} //= 1);
+	$self->{autoconnect} = $args{autoconnect} // 1;
 
-	return $self if !$args{autoconnect};
+	return $self unless $self->{autoconnect};
 
 	$self->connect;
 
@@ -181,7 +181,8 @@ sub connect {
 	$self->log->debug('done with handhake?');
 
 	Mojo::IOLoop->remove($tmr);
-	1;
+
+	return $self->{auth};
 }
 
 sub is_connected {
@@ -830,7 +831,28 @@ expected and json encoded.  (default true)
 =item - ping_timeout: after this long without a ping from the Api the
 connection will be closed and the work() method will return
 
-(default 5 minutes)
+(default: 5 minutes)
+
+=item = autoconnect: automatically connect to the RPC-Switch.
+
+(default: true)
+
+=back
+
+=head2 connect
+
+$connected = $client->connect();
+
+Connect (or reconnect) to the RPC-Switch.  Returns a true value if the
+connection succeeded.
+
+=back
+
+=head2 is_connected
+
+$connected = $client->is_connected();
+
+Returns a true value if the $client is connected.
 
 =back
 
