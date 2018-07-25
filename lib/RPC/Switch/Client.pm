@@ -846,15 +846,11 @@ $connected = $client->connect();
 Connect (or reconnect) to the RPC-Switch.  Returns a true value if the
 connection succeeded.
 
-=back
-
 =head2 is_connected
 
 $connected = $client->is_connected();
 
 Returns a true value if the $client is connected.
-
-=back
 
 =head2 call
 
