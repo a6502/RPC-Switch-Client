@@ -71,7 +71,41 @@ sub new {
 	my $token = $args{token} or croak 'no token?';
 	my $who = $args{who} or croak 'no who?';
 
-	my $rpc = JSON::RPC2::TwoWay->new(debug => $debug) or croak 'no rpc?';
+	$self->{address} = $address;
+	$self->{channels} = {}; # per channel hash of waitids
+	$self->{daemon} = $args{daemon} // 0;
+	$self->{pidfile} = $args{pidfile};
+	$self->{debug} = $args{debug} // 1;
+	$self->{json} = $json;
+	$self->{ping_timeout} = $args{ping_timeout} // 300;
+	$self->{log} = $log;
+	$self->{method} = $method;
+	$self->{port} = $port;
+	$self->{timeout} = $timeout;
+	$self->{tls} = $tls;
+	$self->{tls_ca} = $tls_ca;
+	$self->{tls_cert} = $tls_cert;
+	$self->{tls_key} = $tls_key;
+	$self->{token} = $token;
+	$self->{who} = $who;
+	$self->{autoconnect} = ($args{autoconnect} //= 1);
+
+	return $self if !$args{autoconnect};
+
+	$self->connect;
+
+	return $self if $self->{auth};
+	return;
+}
+
+sub connect {
+	my $self = shift;
+
+	delete $self->{_exit};
+	delete $self->{auth};
+	$self->{actions} = {};
+
+	my $rpc = JSON::RPC2::TwoWay->new(debug => $self->{debug}) or croak 'no rpc?';
 	$rpc->register('rpcswitch.greetings', sub { $self->rpc_greetings(@_) }, notification => 1);
 	$rpc->register('rpcswitch.ping', sub { $self->rpc_ping(@_) });
 	$rpc->register('rpcswitch.channel_gone', sub { $self->rpc_channel_gone(@_) }, notification => 1);
@@ -84,20 +118,20 @@ sub new {
 	);
 
 	my $clarg = {
-		address => $address,
-		port => $port,
-		tls => $tls,
+		address => $self->{address},
+		port => $self->{port},
+		tls => $self->{tls},
 	};
-	$clarg->{tls_ca} = $tls_ca if $tls_ca;
-	$clarg->{tls_cert} = $tls_cert if $tls_cert;
-	$clarg->{tls_key} = $tls_key if $tls_key;
+	$clarg->{tls_ca} = $self->{tls_ca} if $self->{tls_ca};
+	$clarg->{tls_cert} = $self->{tls_cert} if $self->{tls_cert};
+	$clarg->{tls_key} = $self->{tls_key} if $self->{tls_key};
 
 	my $clientid = Mojo::IOLoop->client(
 		$clarg => sub {
 		my ($loop, $err, $stream) = @_;
 		if ($err) {
 			$err =~ s/\n$//s;
-			$log->info('connection to API failed: ' . $err);
+			$self->log->info('connection to API failed: ' . $err);
 			$self->{auth} = 0;
 			return;
 		}
@@ -112,42 +146,24 @@ sub new {
 			my ($ns2, $chunk) = @_;
 			#say 'got chunk: ', $chunk;
 			my @err = $conn->handle($chunk);
-			$log->info('chunk handler: ' . join(' ', grep defined, @err)) if @err;
+			$self->log->info('chunk handler: ' . join(' ', grep defined, @err)) if @err;
 			$ns->close if $err[0];
 		});
 		$ns->on(close => sub {
 			$conn->close;
-			$log->info('connection to rpcswitch closed');
+			$self->log->info('connection to rpcswitch closed');
 			$self->{_exit} = WORK_CONNECTION_CLOSED; # todo: doc
 			Mojo::IOLoop->stop;
 		});
 	});
 
-	$self->{actions} = {};
-	$self->{address} = $address;
-	$self->{channels} = {}; # per channel hash of waitids
-	$self->{clientid} = $clientid;
-	$self->{daemon} = $args{daemon} // 0;
-	$self->{pidfile} = $args{pidfile};
-	$self->{debug} = $args{debug} // 1;
-	$self->{json} = $json;
-	$self->{ping_timeout} = $args{ping_timeout} // 300;
-	$self->{log} = $log;
-	$self->{method} = $method;
-	$self->{port} = $port;
 	$self->{rpc} = $rpc;
-	$self->{timeout} = $timeout;
-	$self->{tls} = $tls;
-	$self->{tls_ca} = $tls_ca;
-	$self->{tls_cert} = $tls_cert;
-	$self->{tls_key} = $tls_key;
-	$self->{token} = $token;
-	$self->{who} = $who;
+	$self->{clientid} = $clientid;
 
 	# handle timeout?
-	my $tmr = Mojo::IOLoop->timer($timeout => sub {
+	my $tmr = Mojo::IOLoop->timer($self->{timeout} => sub {
 		my $loop = shift;
-		$log->error('timeout wating for greeting');
+		$self->log->error('timeout wating for greeting');
 		$loop->remove($clientid); # disconnect
 		$self->{auth} = 0;
 	});
@@ -165,8 +181,12 @@ sub new {
 	$self->log->debug('done with handhake?');
 
 	Mojo::IOLoop->remove($tmr);
-	return $self if $self->{auth};
-	return;
+	1;
+}
+
+sub is_connected {
+	my $self = shift;
+	return $self->{auth} && !$self->{_exit};
 }
 
 sub rpc_greetings {
