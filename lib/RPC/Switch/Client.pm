@@ -427,6 +427,7 @@ sub work {
 	$self->log->debug(blessed($self) . ' starting work');
 	Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
 	$self->log->debug(blessed($self) . ' done?');
+	Mojo::IOLoop->remove($tmr) if $tmr;
 
 	return $self->{_exit};
 }
