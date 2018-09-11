@@ -773,7 +773,7 @@ RPC::Switch::Client - Connect to the RPC-Switch using Mojo.
 =head1 DESCRIPTION
 
 L<RPC::Switch::Client> is a class to build a client to connect to the
-L<RPC-Switch>.  The client can be used to iniate and inspect rpcs as well as
+L<RPC-Switch>.  The client can be used to initiate and inspect rpcs as well as
 for providing 'worker' services to the RPC-Switch.
 
 =head1 METHODS
@@ -875,7 +875,7 @@ Valid arguments are:
 
 =over 4
 
-=item - method: name of the methodw to call (required)
+=item - method: name of the method to call (required)
 
 =item - inargs: input arguments for the workflow (if any)
 
