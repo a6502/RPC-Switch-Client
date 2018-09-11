@@ -1,7 +1,7 @@
 package RPC::Switch::Client;
 use Mojo::Base -base;
 
-our $VERSION = '0.07'; # VERSION
+our $VERSION = '0.08'; # VERSION
 
 #
 # Mojo's default reactor uses EV, and EV does not play nice with signals
