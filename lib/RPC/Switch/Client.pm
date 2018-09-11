@@ -11,6 +11,9 @@ our $VERSION = '0.07'; # VERSION
 BEGIN {
 	$ENV{'MOJO_REACTOR'} = 'Mojo::Reactor::Poll' unless $ENV{'MOJO_REACTOR'};
 }
+
+use feature 'state';
+
 # more Mojolicious
 use Mojo::IOLoop;
 use Mojo::IOLoop::Stream;
@@ -169,15 +172,10 @@ sub connect {
 	});
 
 	$self->log->debug('starting handshake');
-	#Mojo::IOLoop->singleton->reactor->one_tick while !defined $self->{auth};
+	
 	# fixme: catch signals?
-	my $reactor = Mojo::IOLoop->singleton->reactor;
-	$reactor->{running}++; # fixme: this assumes Mojo::Reactor::Poll
-	while (not defined $self->{auth} and $reactor->{running}) {
-		Mojo::IOLoop->singleton->reactor->one_tick;
-		#$self->log->debug('tick');
-	}
-	$reactor->{running}--;
+	$self->_loop(sub { not defined $self->{auth} });
+
 	$self->log->debug('done with handhake?');
 
 	Mojo::IOLoop->remove($tmr);
@@ -236,15 +234,7 @@ sub call {
 	};
 	$self->call_nb(%args);
 
-	my $reactor = Mojo::IOLoop->singleton->reactor;
-	$reactor->{running}++; # fixme: this assumes Mojo::Reactor::Poll
-	#$reactor->start unless $reactor->is_running;
-	#$reactor->one_tick while !$done and $reactor->is_running;
-	while (!$done and $reactor->{running}) {
-        	$self->log->debug('tick');
-        	$reactor->one_tick
-	}
-	$reactor->{running}--;
+	$self->_loop(sub { !$done });
 
 	return $status, $outargs;
 }
@@ -353,15 +343,7 @@ sub get_status {
 	);
 	$self->call_nb(%args);
 
-	my $reactor = Mojo::IOLoop->singleton->reactor;
-	#$reactor->start unless $reactor->is_running;
-	$reactor->{running}++; # fixme: this assumes Mojo::Reactor::Poll
-	#$reactor->one_tick while !$done and $reactor->is_running;
-	while (!$done and $reactor->{running}) {
-        	$self->log->debug('tick');
-        	$reactor->one_tick
-	}
-	$reactor->{running}--;
+	$self->_loop(sub { !$done });
 
 	return $status, $outargs;
 }
@@ -414,8 +396,7 @@ sub ping {
 	});
 
 	# we could recurse here
-	#Mojo::IOLoop->one_tick while !$done;
-	Mojo::IOLoop->singleton->reactor->one_tick while !$done;
+	$self->_loop(sub { !$done });
 
 	return $ret;
 }
@@ -727,6 +708,37 @@ sub _create_pidfile {
 		CORE::close $pid_fh;
 	}
 }
+
+# tick while Mojo::Reactor is still running and condition callback is true
+sub _loop {
+	warn __PACKAGE__." recursing into IO loop" if state $looping++;
+
+	my $reactor = Mojo::IOLoop->singleton->reactor;
+	my $err;
+
+	if (ref $reactor eq 'Mojo::Reactor::EV') {
+
+		my $active = 1;
+
+		$active = $reactor->one_tick while $_[1]->() && $active;
+
+	} elsif (ref $reactor eq 'Mojo::Reactor::Poll') {
+
+		$reactor->{running}++;
+
+		$reactor->one_tick while $_[1]->() && $reactor->is_running;
+
+		$reactor->{running} &&= $reactor->{running} - 1;
+
+	} else {
+
+		$err = "unknown reactor: ".ref $reactor;
+	}
+
+	$looping--;
+	die $err if $err;
+}
+
 
 #sub DESTROY {
 #	my ($self) = @_;
