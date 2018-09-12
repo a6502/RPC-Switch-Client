@@ -153,6 +153,10 @@ sub connect {
 			$ns->close if $err[0];
 		});
 		$ns->on(close => sub {
+			# this cb is called during global destruction, at
+			# least on old perls where
+			# Mojo::Util::_global_destruction() won't work
+	               	return unless $close;
 			$conn->close;
 			$self->log->info('connection to rpcswitch closed');
 			$self->{_exit} = WORK_CONNECTION_CLOSED; # todo: doc
