@@ -1,7 +1,7 @@
 package RPC::Switch::Client;
 use Mojo::Base 'Mojo::EventEmitter';
 
-our $VERSION = '0.10'; # VERSION
+our $VERSION = '0.11'; # VERSION
 
 #
 # Mojo's default reactor uses EV, and EV does not play nice with signals
