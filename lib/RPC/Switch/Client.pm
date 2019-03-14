@@ -242,7 +242,7 @@ sub call_nb {
 	my $inargs = $args{inargs} // '{}';
 	my $waitcb = $args{waitcb}; # optional
 	my $rescb = $args{resultcb} // die 'no result callback?';
-	my $timeout = $args{timeout} // $self->timeout * 5; # a bit hackish..
+	my $timeout = $args{timeout} // 0; # accommodate existing code where this didn't work
 	my $reqauth = $args{reqauth};
 	my $inargsj;
 
@@ -270,7 +270,7 @@ sub call_nb {
 		sub {
 			my $d = shift;
 			my $end = $d->begin(0);
-			if ($timeout) {
+			if ($timeout > 0) {
 				Mojo::IOLoop->timer($timeout => sub { 
 					$d->pass(undef, {result => [RES_TIMEOUT, {}]});
 					$end->(); 
