@@ -48,12 +48,12 @@ has [qw(
 use constant {
 	RES_OK                 => 'RES_OK',
 	RES_WAIT               => 'RES_WAIT',
+	RES_TIMEOUT            => 'RES_TIMEOUT',
 	RES_ERROR              => 'RES_ERROR',
 	RES_OTHER              => 'RES_OTHER', # 'dunno'
 	WORK_OK                => 0,           # exit codes for work method
 	WORK_PING_TIMEOUT      => 92,
 	WORK_CONNECTION_CLOSED => 91,
-
 };
 
 sub new {
@@ -269,7 +269,14 @@ sub call_nb {
 	my $delay = Mojo::IOLoop->delay->steps(
 		sub {
 			my $d = shift;
-			$self->conn->call($method, $inargs, $d->begin(0), 1);
+			my $end = $d->begin(0);
+			if ($timeout) {
+				Mojo::IOLoop->timer($timeout => sub { 
+					$d->pass(undef, {result => [RES_TIMEOUT, {}]});
+					$end->(); 
+				});
+			}
+			$self->conn->call($method, $inargs, $end, 1);
 		},
 		sub {
 			#print Dumper(@_);
