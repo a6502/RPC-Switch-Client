@@ -1,7 +1,7 @@
 package RPC::Switch::Client;
 use Mojo::Base 'Mojo::EventEmitter';
 
-our $VERSION = '0.13'; # VERSION
+our $VERSION = '0.14'; # VERSION
 
 #
 # Mojo's default reactor uses EV, and EV does not play nice with signals
@@ -28,12 +28,12 @@ use Encode qw(encode_utf8 decode_utf8);
 use File::Basename;
 use IO::Handle;
 use POSIX ();
-use Scalar::Util qw(refaddr);
+use Scalar::Util qw(blessed refaddr);
 use Storable;
 use Sys::Hostname;
 
 # from cpan
-use JSON::RPC2::TwoWay 0.03; # for access to the request
+use JSON::RPC2::TwoWay 0.04; # for access to the request
 # JSON::RPC2::TwoWay depends on JSON::MaybeXS anyways, so it can be used here
 # without adding another dependency
 use JSON::MaybeXS;
@@ -255,17 +255,24 @@ sub call_nb {
 		$inargsj = $inargs;
 		$inargs = decode_json($inargs);
 		croak 'inargs is not a json object' unless ref $inargs eq 'HASH';
-		if ($reqauth) {
-			$reqauth = decode_json($reqauth);
-			croak 'reqauth is not a json object' unless ref $reqauth eq 'HASH';
-		}
 	} else {
 		croak 'inargs should be a hashref' unless ref $inargs eq 'HASH';
 		# test encoding
 		$inargsj = encode_json($inargs);
 		if ($reqauth) {
-			croak 'reqauth should be a hashref' unless ref $reqauth eq 'HASH';
 		}
+	}
+
+	if ($reqauth) {
+		if (blessed($reqauth)) {
+			if ($reqauth->can('_to_reqauth')) {
+				# duck typing in action
+				$reqauth = $reqauth->_to_reqauth();
+			} else {
+				croak "Don't know how to convert $reqauth to reqauth hash";
+			}
+		}
+		croak 'reqauth should be a hashref' unless ref $reqauth eq 'HASH';
 	}
 
 	if ($timeout > 0) {
@@ -284,7 +291,11 @@ sub call_nb {
 	my $delay = Mojo::IOLoop->delay->steps(
 		sub {
 			my $d = shift;
-			$self->conn->call($method, $inargs, $d->begin(0), 1);
+			$self->conn->callraw({
+				method => $method,
+				params => $inargs,
+				($reqauth ? (rpcswitch => { vcookie => 'eatme', reqauth => $reqauth }) : ()),
+			}, $d->begin(0));
 		},
 		sub {
 			#print Dumper(@_);
