@@ -42,7 +42,7 @@ use MojoX::NetstringStream 0.06;
 
 has [qw(
 	actions address auth cb_used channels clientid conn debug ioloop
-	json lastpinglog method ns ping_timeout port rpc timeout tls token
+	json lastping log method ns ping_timeout port rpc timeout tls token
 	who
 )];
 
