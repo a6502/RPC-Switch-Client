@@ -41,8 +41,9 @@ use MojoX::NetstringStream 0.06;
 
 
 has [qw(
-	actions address auth cb_used channels clientid conn debug json lastping
-	log method ns ping_timeout port rpc timeout tls token who
+	actions address auth cb_used channels clientid conn debug ioloop
+	json lastpinglog method ns ping_timeout port rpc timeout tls token
+	who
 )];
 
 # keep in sync with the rpc-switch
@@ -62,7 +63,6 @@ sub new {
 	my $self = $class->SUPER::new();
 
 	my $debug = $args{debug} // 0; # or 1?
-	my $log = $args{log} // Mojo::Log->new(level => ($debug) ? 'debug' : 'info');
 
 	$self->{address} = $args{address} // '127.0.0.1';
 	$self->{cb_used} = {}; # avoid calling cb twice in a timeout scenario
@@ -70,7 +70,9 @@ sub new {
 	$self->{debug} = $debug;
 	$self->{json} = $args{json} // 1;
 	$self->{ping_timeout} = $args{ping_timeout} // 300;
-	$self->{log} = $log;
+	$self->{ioloop} = $args{ioloop} // Mojo::IOLoop->singleton;
+	$self->{log} = $args{log}
+		// Mojo::Log->new(level => ($debug) ? 'debug' : 'info');
 	$self->{method} = $args{method} // 'password';
 	$self->{port} = $args{port} // 6551;
 	$self->{timeout} = $args{timeout} // 60;
@@ -100,7 +102,7 @@ sub connect {
 	$self->on(disconnect => sub {
 		my ($self, $code) = @_;
 		$self->{_exit} = $code;
-		Mojo::IOLoop->stop;
+		$self->ioloop->stop;
 	});
 
 	my $rpc = JSON::RPC2::TwoWay->new(debug => $self->{debug}) or croak 'no rpc?';
@@ -124,7 +126,7 @@ sub connect {
 	$clarg->{tls_cert} = $self->{tls_cert} if $self->{tls_cert};
 	$clarg->{tls_key} = $self->{tls_key} if $self->{tls_key};
 
-	my $clientid = Mojo::IOLoop->client(
+	my $clientid = $self->ioloop->client(
 		$clarg => sub {
 		my ($loop, $err, $stream) = @_;
 		if ($err) {
@@ -162,7 +164,7 @@ sub connect {
 	$self->{clientid} = $clientid;
 
 	# handle timeout?
-	my $tmr = Mojo::IOLoop->timer($self->{timeout} => sub {
+	my $tmr = $self->ioloop->timer($self->{timeout} => sub {
 		my $loop = shift;
 		$self->log->error('timeout wating for greeting');
 		$loop->remove($clientid); # disconnect
@@ -176,7 +178,7 @@ sub connect {
 
 	$self->log->debug('done with handhake?');
 
-	Mojo::IOLoop->remove($tmr);
+	$self->ioloop->remove($tmr);
 
 	return $self->{auth};
 }
@@ -188,7 +190,7 @@ sub is_connected {
 
 sub rpc_greetings {
 	my ($self, $c, $i) = @_;
-	Mojo::IOLoop->delay(
+	$self->ioloop->delay(
 		sub {
 			my $d = shift;
 			die "wrong api version $i->{version} (expected 1.0)" unless $i->{version} eq '1.0';
@@ -276,7 +278,7 @@ sub call_nb {
 	}
 
 	if ($timeout > 0) {
-		Mojo::IOLoop->timer($timeout => sub {
+		$self->ioloop->timer($timeout => sub {
 			$rescb->(RES_TIMEOUT, "timed out after $timeout seconds");
 			$self->{cb_used}->{refaddr($rescb)} = 1
 				if defined $self->{cb_used}->{refaddr($rescb)};
@@ -288,7 +290,7 @@ sub call_nb {
 	$inargsj = decode_utf8($inargsj);
 	$self->log->debug("calling $method with '" . $inargsj . "'" . (($vtag) ? " (vtag $vtag)" : ''));
 
-	my $delay = Mojo::IOLoop->delay->steps(
+	my $delay = $self->ioloop->delay( #->steps(
 		sub {
 			my $d = shift;
 			$self->conn->callraw({
@@ -406,7 +408,7 @@ sub ping {
 	$timeout //= $self->timeout;
 	my ($done, $ret);
 
-	Mojo::IOLoop->timer($timeout => sub {
+	$self->ioloop->timer($timeout => sub {
 		$done++;
 	});
 
@@ -431,7 +433,7 @@ sub work {
 
 	my $pt = $self->ping_timeout;
 	my $tmr;
-	$tmr = Mojo::IOLoop->recurring($pt => sub {
+	$tmr = $self->ioloop->recurring($pt => sub {
 		my $ioloop = shift;
 		$self->log->debug('in ping_timeout timer: lastping: '
 			 . ($self->lastping // 0) . ' limit: ' . (time - $pt) );
@@ -445,9 +447,9 @@ sub work {
 
 	$self->{_exit} = WORK_OK;
 	$self->log->debug(blessed($self) . ' starting work');
-	Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
+	$self->ioloop->start unless $self->ioloop->is_running;
 	$self->log->debug(blessed($self) . ' done?');
-	Mojo::IOLoop->remove($tmr) if $tmr;
+	$self->ioloop->remove($tmr) if $tmr;
 
 	return $self->{_exit};
 }
@@ -455,7 +457,7 @@ sub work {
 sub stop {
 	my ($self, $exit) = @_;
 	$self->{_exit} = $exit;
-	Mojo::IOLoop->stop;
+	$self->ioloop->stop;
 }
 
 sub announce {
@@ -472,7 +474,7 @@ sub announce {
 	croak "already have action $method" if $self->actions->{$method};
 	
 	my $err;
-	Mojo::IOLoop->delay->steps(
+	$self->ioloop->delay( #->steps(
 	sub {
 		my $d = shift;
 		# fixme: check results?
@@ -620,7 +622,7 @@ sub _subproc {
 	my ($self, $cb, $action, $req_id, @args) = @_;
 
 	# based on Mojo::IOLoop::Subprocess
-	my $ioloop = Mojo::IOLoop->singleton;
+	my $ioloop = $self->ioloop;
 
 	# Pipe for subprocess communication
 	pipe(my $reader, my $writer) or die "Can't create pipe: $!";
@@ -682,7 +684,7 @@ sub close {
 sub _loop {
 	warn __PACKAGE__." recursing into IO loop" if state $looping++;
 
-	my $reactor = Mojo::IOLoop->singleton->reactor;
+	my $reactor = $_[0]->ioloop->reactor;
 	my $err;
 
 	if (ref $reactor eq 'Mojo::Reactor::EV') {
@@ -800,6 +802,10 @@ Valid arguments are:
 
 when true expects the inargs to be valid json, when false a perl hashref is
 expected and json encoded.  (default true)
+
+=item - ioloop: L<Mojo::IOLoop> object to use
+
+(per default the L<Mojo::IOLoop>->singleton object is used)
 
 =item - log: L<Mojo::Log> object to use
 
