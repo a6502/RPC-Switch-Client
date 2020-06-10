@@ -26,7 +26,7 @@ use Encode qw(encode_utf8 decode_utf8);
 use File::Basename;
 use IO::Handle;
 use POSIX ();
-use Scalar::Util qw(blessed refaddr);
+use Scalar::Util qw(blessed refaddr weaken);
 use Storable;
 use Sys::Hostname;
 
@@ -91,7 +91,7 @@ sub new {
 }
 
 sub connect {
-	my $self = shift;
+	weaken (my $self = shift);
 
 	delete $self->ioloop->{__exit__};
 	delete $self->{auth};
@@ -133,13 +133,13 @@ sub connect {
 			$self->{auth} = 0;
 			return;
 		}
-		my $ns = MojoX::NetstringStream->new(stream => $stream);
-		$self->{ns} = $ns;
-		my $conn = $rpc->newconnection(
+		$self->{ns} = MojoX::NetstringStream->new(stream => $stream);
+		weaken (my $ns = $self->{ns});
+		$self->{conn} = $rpc->newconnection(
 			owner => $self,
 			write => sub { $ns->write(@_) },
 		);
-		$self->{conn} = $conn;
+		weaken (my $conn = $self->{conn});
 		$ns->on(chunk => sub {
 			my ($ns2, $chunk) = @_;
 			#say 'got chunk: ', $chunk;
@@ -535,6 +535,7 @@ sub rpc_ping {
 sub _magic {
 	#say '_magic: ', Dumper(\@_);
 	my ($self, $action, $con, $request, $rpccb) = @_;
+	weaken $con;
 	my $method = $request->{method};
 	my $req_id = $request->{id};
 	unless ($action) {
@@ -625,6 +626,8 @@ sub _magic {
 
 sub _subproc {
 	my ($self, $cb, $action, $req_id, @args) = @_;
+
+	weaken $self;
 
 	# based on Mojo::IOLoop::Subprocess
 	my $ioloop = $self->ioloop;
