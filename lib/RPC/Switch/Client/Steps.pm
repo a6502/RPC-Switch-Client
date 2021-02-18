@@ -12,9 +12,8 @@ has _errcb => sub { sub { say STDERR "caught >>> $_[0] <<<" } };
 sub steps {
 	my ($self, $cbs, $errcb, @args) = @_;
 	croak "no callbacks" unless ref $cbs eq 'ARRAY';
-	# todo: check that array elements are coderefs
+	# todo: check that array elements are coderefs?
 	$self->_remaining($cbs);
-	say "errcb $errcb";
 	$self->_errcb($errcb) if ref $errcb eq 'CODE';
 	
 	$self->ioloop->next_tick(sub { $self->_next(@args) });
