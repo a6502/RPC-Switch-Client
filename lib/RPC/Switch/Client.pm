@@ -563,14 +563,15 @@ sub _magic {
 	my $rpcswitch = $request->{rpcswitch} or
 		die "no rpcswitch information?";
 	$rpcswitch->{worker_id} = $action->{worker_id};
-	my $resp = {
-		jsonrpc	    => '2.0',
-		id	    => $req_id,
-		rpcswitch   => $rpcswitch,
-	};
+	my $waiting;
 	my $cb1 = sub {
-		$resp->{result} = \@_;
-		$rpccb->($resp);
+		$waiting = 1 if @_ and $_[0] eq RES_WAIT;
+		$rpccb->({
+			jsonrpc   => '2.0',
+			id        => $req_id,
+			rpcswitch => $rpcswitch,
+			result    => \@_,
+		});
 	};
 	my @args = ($req_id, $request->{params});
 	push @args, $rpcswitch if $action->{meta};
@@ -579,12 +580,21 @@ sub _magic {
 	# fastest to slowest?
 	if ($action->{mode} eq 'async2') {
 		my $cb2 = sub {
-			my $request = $self->{jsonobject}->encode({
-				jsonrpc => '2.0',
-				method => 'rpcswitch.result',
-				rpcswitch   => $rpcswitch,
-				params => \@_,
-			});
+			my $request = $self->{jsonobject}->encode(
+				$waiting
+				? {
+					jsonrpc   => '2.0',
+					method    => 'rpcswitch.result',
+					rpcswitch => $rpcswitch,
+					params    => \@_,
+				}
+				: {
+					jsonrpc    => '2.0',
+					id         => $req_id,
+					rpcswitch  => $rpcswitch,
+					result     => \@_,
+				}
+			);
 			$con->write($request);
 		};
 		eval {
@@ -594,13 +604,24 @@ sub _magic {
 			$cb1->(RES_ERROR, $@);
 		}
 	} elsif ($action->{mode} eq 'async') {
+		my $sent;
 		my $cb2 = sub {
-			my $request = $self->{jsonobject}->encode({
-				jsonrpc => '2.0',
-				method => 'rpcswitch.result',
-				rpcswitch   => $rpcswitch,
-				params => [ RES_OK, $req_id, @_ ],
-			});
+			$sent = 1 unless $waiting;
+			my $request = $self->{jsonobject}->encode(
+				$waiting
+				? {
+					jsonrpc => '2.0',
+					method => 'rpcswitch.result',
+					rpcswitch   => $rpcswitch,
+					params => [ RES_OK, $req_id, @_ ],
+				}
+				: {
+					jsonrpc    => '2.0',
+					id         => $req_id,
+					rpcswitch  => $rpcswitch,
+					result     => [ RES_OK, @_ ],
+				}
+			);
 			$con->write($request);
 		};
 		eval {
@@ -608,7 +629,7 @@ sub _magic {
 		};
 		if ($@) {
 			$cb1->(RES_ERROR, $@);
-		} else {
+		} elsif (not $sent) {
 			$cb1->(RES_WAIT, $req_id);
 		}
 	} elsif ($action->{mode} eq 'sync') {
@@ -633,7 +654,7 @@ sub _magic {
 		};
 		if ($@) {
 			$cb1->(RES_ERROR, $@);
-		} else {
+		} else { 
 			$cb1->(RES_WAIT, $req_id);
 		}
 	} else { 
