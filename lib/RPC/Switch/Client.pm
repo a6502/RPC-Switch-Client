@@ -394,6 +394,20 @@ sub rpc_result {
 	my ($rescb, $tmr) = @{$req}{qw(rescb tmr)};
 	return unless $rescb;
 	$self->ioloop->remove($tmr) if $tmr;
+	if (
+		$status eq RES_OK and 
+		ref $outargs eq 'HASH' and 
+		ref $outargs->{error} eq 'HASH' and
+		exists $outargs->{error}{class} and
+		exists $outargs->{error}{msg} 
+	) {
+		my %clipped = %$outargs;
+		$outargs = delete $clipped{error};
+		$status  = RES_ERROR;
+		$self->log->warn('clipped error message ' . Dumper(\%clipped)) 
+			if %clipped;
+		$self->log->debug('upgraded error to rpc error');
+	}
 	$outargs = $self->{jsonobject}->encode($outargs)
 		 if $self->{json} and ref $outargs;
 	$rescb->($status, $outargs);
