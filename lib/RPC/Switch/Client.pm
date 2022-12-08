@@ -26,12 +26,12 @@ use Encode qw(encode_utf8 decode_utf8);
 use File::Basename;
 use IO::Handle;
 use POSIX ();
-use Scalar::Util qw(blessed refaddr);
+use Scalar::Util qw(blessed refaddr weaken);
 use Storable;
 use Sys::Hostname;
 
 # from cpan
-use JSON::RPC2::TwoWay 0.05; # for configurable json encoder
+use JSON::RPC2::TwoWay 0.07; # for configurable json encoder
 # JSON::RPC2::TwoWay depends on JSON::MaybeXS anyways, so it can be used here
 # without adding another dependency
 use JSON::MaybeXS qw();
@@ -106,8 +106,19 @@ sub connect {
 		$self->ioloop->stop;
 	});
 
+	my $debug = do {
+		weaken(my $self = $self);
+		$self->{debug} ? sub { 
+			if ($self->{log}) {
+				$self->log->debug(@_) 
+			} else {
+				warn join(' ', @_)."\n";
+			}
+		} : undef
+	};
+
 	my $rpc = JSON::RPC2::TwoWay->new(
-		debug => $self->{debug},
+		debug => $debug,
 		json => $self->{jsonobject},
 	) or croak 'no rpc?';
 	$rpc->register('rpcswitch.greetings', sub { $self->rpc_greetings(@_) }, notification => 1);
